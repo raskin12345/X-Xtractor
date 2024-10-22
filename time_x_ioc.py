@@ -4,7 +4,7 @@ import os
 from time import sleep
 from datetime import datetime, timedelta
 from dateutil import parser
-
+from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
 
 """
 
@@ -85,8 +85,8 @@ def scrape_and_collect_tweets():
 
     while True:
         if scroll_attempts != 0:
-            scroll_down(1200)
-        sleep(2)  # Wait for tweets to load after scrolling
+            scroll_down(1000)
+        sleep(3)  # Wait for tweets to load after scrolling
 
         # Grab all tweet articles
         tweets = find_all(S("//article[@role='article']"))
@@ -96,7 +96,14 @@ def scrape_and_collect_tweets():
             for tweet in tweets:
                 
                 tweet_text = tweet.web_element.text
-                time_element = tweet.web_element.find_element("tag name", "time")  # Get time in UTC of the tweet
+                
+                try:
+                    time_element = tweet.web_element.find_element("tag name", "time")  # Get time in UTC of the tweet
+                except NoSuchElementException: #or StaleElementReferenceException:
+                    print("vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv")
+                    print("Skipped this tweet ================================>"+str(tweet_text))
+                    print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+                    continue
                 tweet_time = time_element.get_attribute("datetime")
 
                     # Check if the tweet is within the user-specified timeframe
