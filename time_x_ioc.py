@@ -29,15 +29,15 @@ def calculate_cutoff_time(timeframe):
     number = int(number)
 
     # Calculate the timedelta based on the unit (e.g., days, hours, weeks, months, years)
-    if unit == 'days':
+    if unit == 'days' or unit == 'day' or unit == 'd':
         return datetime.utcnow() - timedelta(days=number)
-    elif unit == 'hours':
+    elif unit == 'hours' or unit == 'hour' or unit == 'h':
         return datetime.utcnow() - timedelta(hours=number)
-    elif unit == 'weeks':
+    elif unit == 'weeks' or unit == 'week' or unit == 'w':
         return datetime.utcnow() - timedelta(weeks=number)
-    elif unit == 'months':  # Approximate to 30 days per month
+    elif unit == 'months' or unit == 'month' or unit == 'm':  # Approximate to 30 days per month
         return datetime.utcnow() - timedelta(days=30 * number)
-    elif unit == 'years': # 365 days per year
+    elif unit == 'years' or unit == 'year' or unit == 'y': # 365 days per year
         return datetime.utcnow() - timedelta(days=365 * number)
     else:
         raise ValueError("Unsupported time unit")
