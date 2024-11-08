@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from dateutil import parser
 from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
 
+from extractor import main_extractor
 """
 
 """
@@ -115,7 +116,7 @@ def scrape_and_collect_tweets():
                     with open('collected_tweets.txt', 'w', encoding='utf-8') as collected_file:
                         for line in all_tweets:
                             collected_file.write(line + "\n")
-                    return  # Stop scraping when reaching tweets older than the cutoff time
+                    return malware,cutoff_time# Stop scraping when reaching tweets older than the cutoff time
 
                 # If the tweet is within the timeframe, add it to the list
                 all_tweets.append(tweet_text)
@@ -138,8 +139,11 @@ def scrape_and_collect_tweets():
     with open('collected_tweets.txt', 'w', encoding='utf-8') as collected_file:
         for line in all_tweets:
             collected_file.write(line + "\n")
+    return malware
 
 # Example usage with login credentials
 #username = 'user' 
 #password = 'pass' 
-scrape_and_collect_tweets()
+
+malware_name,cutoff_time=scrape_and_collect_tweets()
+main_extractor(malware_name,cutoff_time)
