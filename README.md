@@ -14,6 +14,10 @@ pip install helium
 pip install pickle
 ```
 
+```
+pip install python-dateutil
+```
+
 ---
 ## Usage
 - Download the two scripts and store them into a new folder
