@@ -139,7 +139,7 @@ def scrape_and_collect_tweets():
     with open('collected_tweets.txt', 'w', encoding='utf-8') as collected_file:
         for line in all_tweets:
             collected_file.write(line + "\n")
-    return malware
+    return malware, cutoff_time
 
 # Example usage with login credentials
 #username = 'user' 
