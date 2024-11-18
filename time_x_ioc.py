@@ -1,20 +1,17 @@
-from helium import *
 import pickle
 import os
 from time import sleep
 from datetime import datetime, timedelta
 from dateutil import parser
-from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
+from selenium.common.exceptions import NoSuchElementException
+from helium import start_firefox, write, click, go_to, kill_browser, wait_until, find_all, S
 
 from extractor import main_extractor
-"""
-
-"""
 
 # Function to save cookies to a file
 def save_cookies(browser):
     with open("cookies.pkl", "wb") as file:
-        pickle.dump(get_driver().get_cookies(), file)
+        pickle.dump(browser.get_cookies(), file)
 
 # Function to load cookies from a file
 def load_cookies(browser):
@@ -22,7 +19,7 @@ def load_cookies(browser):
         with open("cookies.pkl", "rb") as file:
             cookies = pickle.load(file)
             for cookie in cookies:
-                get_driver().add_cookie(cookie)
+                browser.add_cookie(cookie)
 
 # Function to calculate the cutoff time based on the user-defined timeframe
 def calculate_cutoff_time(timeframe):
@@ -30,16 +27,18 @@ def calculate_cutoff_time(timeframe):
     number = int(number)
 
     # Calculate the timedelta based on the unit (e.g., days, hours, weeks, months, years)
-    if unit == 'days' or unit == 'day' or unit == 'd':
-        return datetime.utcnow() - timedelta(days=number)
-    elif unit == 'hours' or unit == 'hour' or unit == 'h':
-        return datetime.utcnow() - timedelta(hours=number)
-    elif unit == 'weeks' or unit == 'week' or unit == 'w':
-        return datetime.utcnow() - timedelta(weeks=number)
-    elif unit == 'months' or unit == 'month' or unit == 'm':  # Approximate to 30 days per month
-        return datetime.utcnow() - timedelta(days=30 * number)
-    elif unit == 'years' or unit == 'year' or unit == 'y': # 365 days per year
-        return datetime.utcnow() - timedelta(days=365 * number)
+    time_units = {
+        'd': timedelta(days=number),
+        'h': timedelta(hours=number),
+        'w': timedelta(weeks=number),
+        'm': timedelta(days=30 * number),  # Approximate 30 days per month
+        'y': timedelta(days=365 * number)  # Approximate 365 days per year
+    }
+
+    unit = unit[0]  # Normalize to first character (e.g., 'day' -> 'd')
+
+    if unit in time_units:
+        return datetime.utcnow() - time_units[unit]
     else:
         raise ValueError("Unsupported time unit")
 
@@ -48,7 +47,17 @@ def is_within_timeframe(tweet_time_str, cutoff_time):
     tweet_time = parser.isoparse(tweet_time_str).replace(tzinfo=None)  # Convert to offset-naive datetime object
     return tweet_time >= cutoff_time
 
-# Function to scroll and collect tweets from search results
+# Function to log in to Twitter (X) and save cookies
+def login_to_twitter(browser, username, password):
+    write(username, into="Phone, email, or username")
+    click('Next')
+    wait_until(lambda: 'Password' in find_all("Text"))
+    write(password, into='Password')
+    click('Log in')
+    sleep(5)  # Wait for login to complete
+    save_cookies(browser)  # Save cookies for future use
+
+# Function to scrape and collect tweets based on hashtag and timeframe
 def scrape_and_collect_tweets():
     malware = input("Enter the hashtag to search for: ")
     timeframe = input("Enter the timeframe (e.g., '7 days', '3 hours', '2 weeks'): ")
@@ -67,18 +76,9 @@ def scrape_and_collect_tweets():
         go_to(f"https://x.com/search?q=%23{malware}&src=typed_query&f=live")  # Refresh the page after loading cookies
         sleep(3)
     else:
-        username=input("Enter Username: ")
-        password=input("Enter Password: ")
-        # Log in to Twitter (X)
-        write(username, into="Phone, email, or username")
-        click('Next')
-        wait_until(Text('Password').exists)
-        write(password, into='Password')
-        click('Log in')
-        sleep(5)  # Wait for login to complete
-
-        # Save cookies after logging in for future use
-        save_cookies(browser)
+        username = input("Enter Username: ")
+        password = input("Enter Password: ")
+        login_to_twitter(browser, username, password)
 
     # To store the collected tweets
     all_tweets = []
@@ -95,55 +95,47 @@ def scrape_and_collect_tweets():
         # Extract text from each tweet and store it in the list
         if tweets:
             for tweet in tweets:
-                
                 tweet_text = tweet.web_element.text
                 
                 try:
                     time_element = tweet.web_element.find_element("tag name", "time")  # Get time in UTC of the tweet
-                except NoSuchElementException: #or StaleElementReferenceException:
-                    print("vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv")
-                    print("Skipped this tweet ================================>"+str(tweet_text))
-                    print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
-                    continue
-                tweet_time = time_element.get_attribute("datetime")
+                    tweet_time = time_element.get_attribute("datetime")
 
                     # Check if the tweet is within the user-specified timeframe
-                if not is_within_timeframe(tweet_time, cutoff_time):
-                    print(f"Reached tweets older than {timeframe}, stopping...")
-                    print(f"Total Collected Tweets: {len(all_tweets)}")
-                    kill_browser()  # Close the browser
-                    # Save the tweets to a file
-                    with open('collected_tweets.txt', 'w', encoding='utf-8') as collected_file:
-                        for line in all_tweets:
-                            collected_file.write(line + "\n")
-                    return malware,cutoff_time# Stop scraping when reaching tweets older than the cutoff time
+                    if not is_within_timeframe(tweet_time, cutoff_time):
+                        print(f"Reached tweets older than {timeframe}, stopping...")
+                        print(f"Total Collected Tweets: {len(all_tweets)}")
+                        save_collected_tweets(all_tweets)
+                        kill_browser()  # Close the browser
+                        return malware, cutoff_time  # Stop scraping when reaching tweets older than the cutoff time
 
-                # If the tweet is within the timeframe, add it to the list
-                all_tweets.append(tweet_text)
-                print(f"Tweet Time: {tweet_time}")
-                print(f"Collected Tweet:\n{tweet_text}\n")
-                
+                    # If the tweet is within the timeframe, add it to the list
+                    all_tweets.append(tweet_text)
+                    print(f"Tweet Time: {tweet_time}")
+                    print(f"Collected Tweet:\n{tweet_text}\n")
+
+                except NoSuchElementException:
+                    print("Skipped tweet due to missing time information")
+                    continue
 
             scroll_attempts += 1  # Increase scroll attempts after processing tweets
         else:
             print("No more tweets found, stopping...")
             break
 
-    # After collecting tweets, print or save the results
-    print("Total Collected Tweets:", len(all_tweets))
+    print(f"Total Collected Tweets: {len(all_tweets)}")
+    save_collected_tweets(all_tweets)
+    kill_browser()  # Close the browser
 
-    # Close the browser when done
-    #kill_browser()
-
-    # Save the tweets to a file
-    with open('collected_tweets.txt', 'w', encoding='utf-8') as collected_file:
-        for line in all_tweets:
-            collected_file.write(line + "\n")
     return malware, cutoff_time
 
-# Example usage with login credentials
-#username = 'user' 
-#password = 'pass' 
+# Function to save the collected tweets to a file
+def save_collected_tweets(tweets):
+    with open('collected_tweets.txt', 'w', encoding='utf-8') as collected_file:
+        for tweet in tweets:
+            collected_file.write(tweet + "\n")
 
-malware_name,cutoff_time=scrape_and_collect_tweets()
-main_extractor(malware_name,cutoff_time)
+# Main execution
+if __name__ == "__main__":
+    malware_name, cutoff_time = scrape_and_collect_tweets()
+    main_extractor(malware_name, cutoff_time)
