@@ -1,141 +1,150 @@
-import os
+
+from helium import *
 import pickle
+import os
 from time import sleep
 from datetime import datetime, timedelta
 from dateutil import parser
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.common.exceptions import NoSuchElementException, TimeoutException
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
+
+from extractor import main_extractor
+"""
+
+"""
 
 # Function to save cookies to a file
-def save_cookies(driver):
+def save_cookies(browser):
     with open("cookies.pkl", "wb") as file:
-        pickle.dump(driver.get_cookies(), file)
+        pickle.dump(get_driver().get_cookies(), file)
 
 # Function to load cookies from a file
-def load_cookies(driver):
+def load_cookies(browser):
     if os.path.exists("cookies.pkl"):
         with open("cookies.pkl", "rb") as file:
             cookies = pickle.load(file)
             for cookie in cookies:
-                driver.add_cookie(cookie)
+                get_driver().add_cookie(cookie)
 
 # Function to calculate the cutoff time based on the user-defined timeframe
 def calculate_cutoff_time(timeframe):
     number, unit = timeframe.split()
     number = int(number)
 
-    if unit in ['days', 'day', 'd']:
+    # Calculate the timedelta based on the unit (e.g., days, hours, weeks, months, years)
+    if unit == 'days' or unit == 'day' or unit == 'd':
         return datetime.utcnow() - timedelta(days=number)
-    elif unit in ['hours', 'hour', 'h']:
+    elif unit == 'hours' or unit == 'hour' or unit == 'h':
         return datetime.utcnow() - timedelta(hours=number)
-    elif unit in ['weeks', 'week', 'w']:
+    elif unit == 'weeks' or unit == 'week' or unit == 'w':
         return datetime.utcnow() - timedelta(weeks=number)
-    elif unit in ['months', 'month', 'm']:
+    elif unit == 'months' or unit == 'month' or unit == 'm':  # Approximate to 30 days per month
         return datetime.utcnow() - timedelta(days=30 * number)
-    elif unit in ['years', 'year', 'y']:
+    elif unit == 'years' or unit == 'year' or unit == 'y': # 365 days per year
         return datetime.utcnow() - timedelta(days=365 * number)
     else:
         raise ValueError("Unsupported time unit")
 
 # Function to check if a tweet is within the specified timeframe
 def is_within_timeframe(tweet_time_str, cutoff_time):
-    try:
-        tweet_time = parser.isoparse(tweet_time_str).replace(tzinfo=None)
-        return tweet_time >= cutoff_time
-    except Exception as e:
-        print(f"Error parsing tweet time: {e}")
-        return False
+    tweet_time = parser.isoparse(tweet_time_str).replace(tzinfo=None)  # Convert to offset-naive datetime object
+    return tweet_time >= cutoff_time
 
-# Function to scroll down the page
-def scroll_down(driver):
-    driver.execute_script("window.scrollBy(0, 1000);")
-
-# Main function to scrape and collect tweets
+# Function to scroll and collect tweets from search results
 def scrape_and_collect_tweets():
     malware = input("Enter the hashtag to search for: ")
     timeframe = input("Enter the timeframe (e.g., '7 days', '3 hours', '2 weeks'): ")
 
+    # Calculate the cutoff time based on the user input
     cutoff_time = calculate_cutoff_time(timeframe)
     print(f"Scraping tweets from the last {timeframe}, cutoff time: {cutoff_time}")
 
-    # Start the browser
-    driver = webdriver.Firefox()  # Ensure geckodriver is installed
-    driver.get(f"https://x.com/search?q=%23{malware}&src=typed_query&f=live")
-    sleep(3)
+    # Start the browser and navigate to Twitter (X) search page
+    browser = start_firefox(f"https://x.com/search?q=%23{malware}&src=typed_query&f=live", headless=False)
+    sleep(3)  # Wait for the page to load
 
-    # Load cookies if they exist
+    # Check if cookies exist and load them to bypass login
     if os.path.exists("cookies.pkl"):
-        load_cookies(driver)
-        driver.refresh()
+        load_cookies(browser)
+        go_to(f"https://x.com/search?q=%23{malware}&src=typed_query&f=live")  # Refresh the page after loading cookies
         sleep(3)
     else:
-        username = input("Enter Username: ")
-        password = input("Enter Password: ")
-
+        username=input("Enter Username: ")
+        password=input("Enter Password: ")
         # Log in to Twitter (X)
-        try:
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.NAME, "session[username_or_email]"))
-            ).send_keys(username)
-            driver.find_element(By.NAME, "session[password]").send_keys(password)
-            driver.find_element(By.XPATH, "//div[contains(text(),'Log in')]").click()
-            sleep(5)
-            save_cookies(driver)
-        except TimeoutException:
-            print("Login failed. Please check your credentials.")
-            driver.quit()
-            return
+        write(username, into="Phone, email, or username")
+        click('Next')
+        wait_until(Text('Password').exists)
+        write(password, into='Password')
+        click('Log in')
+        sleep(5)  # Wait for login to complete
 
+        # Save cookies after logging in for future use
+        save_cookies(browser)
+
+    # To store the collected tweets
     all_tweets = []
-    scroll_attempts = 0
+    scroll_attempts = 0  # Track the number of scroll attempts
 
     while True:
-        if scroll_attempts > 0:
-            scroll_down(driver)
-        sleep(3)
+        if scroll_attempts != 0:
+            scroll_down(1000)
+        sleep(3)  # Wait for tweets to load after scrolling
 
-        try:
-            # Locate all tweet elements
-            tweets = driver.find_elements(By.XPATH, "//article[@role='article']")
+        # Grab all tweet articles
+        tweets = find_all(S("//article[@role='article']"))
 
-            if not tweets:
-                print("No more tweets found, stopping...")
-                break
-
+        # Extract text from each tweet and store it in the list
+        if tweets:
             for tweet in tweets:
-                tweet_text = tweet.text
+                
+                tweet_text = tweet.web_element.text
+                
                 try:
-                    time_element = tweet.find_element(By.TAG_NAME, "time")
-                    tweet_time = time_element.get_attribute("datetime")
-                except NoSuchElementException:
+                    time_element = tweet.web_element.find_element("tag name", "time")  # Get time in UTC of the tweet
+                except NoSuchElementException: #or StaleElementReferenceException:
+                    print("vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv")
+                    print("Skipped this tweet ================================>"+str(tweet_text))
+                    print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
                     continue
+                tweet_time = time_element.get_attribute("datetime")
 
+                    # Check if the tweet is within the user-specified timeframe
                 if not is_within_timeframe(tweet_time, cutoff_time):
                     print(f"Reached tweets older than {timeframe}, stopping...")
-                    driver.quit()
-                    with open('collected_tweets.txt', 'w', encoding='utf-8') as file:
-                        file.writelines(f"{line}\n" for line in all_tweets)
-                    return
+                    print(f"Total Collected Tweets: {len(all_tweets)}")
+                    kill_browser()  # Close the browser
+                    # Save the tweets to a file
+                    with open('collected_tweets.txt', 'w', encoding='utf-8') as collected_file:
+                        for line in all_tweets:
+                            collected_file.write(line + "\n")
+                    return malware,cutoff_time# Stop scraping when reaching tweets older than the cutoff time
 
+                # If the tweet is within the timeframe, add it to the list
                 all_tweets.append(tweet_text)
+                print(f"Tweet Time: {tweet_time}")
                 print(f"Collected Tweet:\n{tweet_text}\n")
+                
 
-            scroll_attempts += 1
-
-        except Exception as e:
-            print(f"Error during scraping: {e}")
+            scroll_attempts += 1  # Increase scroll attempts after processing tweets
+        else:
+            print("No more tweets found, stopping...")
             break
 
+    # After collecting tweets, print or save the results
     print("Total Collected Tweets:", len(all_tweets))
-    with open('collected_tweets.txt', 'w', encoding='utf-8') as file:
-        file.writelines(f"{line}\n" for line in all_tweets)
 
-    driver.quit()
-    return
+    # Close the browser when done
+    #kill_browser()
 
-if __name__ == "__main__":
-    scrape_and_collect_tweets()
+    # Save the tweets to a file
+    with open('collected_tweets.txt', 'w', encoding='utf-8') as collected_file:
+        for line in all_tweets:
+            collected_file.write(line + "\n")
+    return malware, cutoff_time
+
+# Example usage with login credentials
+#username = 'user' 
+#password = 'pass' 
+
+malware_name,cutoff_time=scrape_and_collect_tweets()
+main_extractor(malware_name,cutoff_time)
