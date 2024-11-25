@@ -1,7 +1,7 @@
 # X-Xtractor
 ---
 
-- This used to extract tweets from `https://x.com/search?q=<malware_name>&src=typed_query&f=live` url. This url is used to search the malware with the hash tags like `#remcos`, `#lumma`, etc. in X's search qurey's latest tab. Doing so will give us the latest IOCs shared by community using `#<malware_name>` hashtag in their tweet.
+- This used to extract tweets from `https://x.com/search?q=<malware_name>&src=typed_query&f=live` url. This url is used to search the malware like `remcos`, `lumma`, etc. in X's search qurey's latest tab. Doing so will give us the latest IOCs shared by community using that malware name in the tweet.
 - The `x_xtractror.py` now scrapes twitter and extract iocs as well.
 ---
 ## Requirements
