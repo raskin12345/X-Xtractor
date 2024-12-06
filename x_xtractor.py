@@ -1,12 +1,18 @@
 import re
 import os
 import pickle
-import csv
+#import csv
 from helium import *
 from time import sleep
 from datetime import datetime, timedelta
 from dateutil import parser
 from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
+import urllib.request
+
+"""
+TODO: use the iocextract library
+make the search query url encoded on its own
+"""
 
 # Refactored function to start browser session and handle cookies
 def start_browser_session(malware):
@@ -142,6 +148,7 @@ def main_extractor(malware_name, cutoff_time):
     ip_regex = r"((?:\d{1,3}(?:\[\.\]|\.)?){3}\d{1,3})" 
     domain_regex = r"\b(?:[a-zA-Z0-9-]+\[?\.\]?)+[a-zA-Z]{2,}\b"
     hash_regex = r"\b([a-fA-F0-9]{32}|[a-fA-F0-9]{40}|[a-fA-F0-9]{64})\b"
+    url_regex=r""
 
     def extract_iocs(text):
         ips = [ip.replace("[.]", ".") for ip in re.findall(ip_regex, text)]
@@ -155,7 +162,9 @@ def main_extractor(malware_name, cutoff_time):
     
     from_date = cutoff_time.date()
     today_date = datetime.now().date()
+    malware_name =  "".join([malware_name[3:] if malware_name[:3] == "%23" else malware_name])
     malware_name = malware_name.split('%20')[0] if '%20' in malware_name else malware_name
+    
     
     os.makedirs(malware_name, exist_ok=True)
 
@@ -179,7 +188,8 @@ def main_extractor(malware_name, cutoff_time):
 # Main function to start the process
 def scrape_and_collect_tweets():
     try:
-        malware = input("Enter the hashtag to search for: ")
+        malware = input("Enter the search query: ")
+        malware=urllib.parse.quote(malware)
         malware = malware.lower()
         timeframe = input("Enter the timeframe (e.g., '7 days', '3 hours', '2 weeks'): ")
         cutoff_time = calculate_cutoff_time(timeframe)
