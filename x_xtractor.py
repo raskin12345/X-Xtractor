@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from dateutil import parser
 from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
 import urllib.request
+from ioc_finder import find_iocs
 
 """
 TODO: use the iocextract library
@@ -141,24 +142,28 @@ def save_collected_tweets(tweets):
 
 # Extract and save IOCs from collected tweets
 def main_extractor(malware_name, cutoff_time):
-    with open('collected_tweets.txt', 'r', encoding='utf-8') as file:
-        collected_tweets = file.read()
 
-    # Updated regex patterns
-    ip_regex = r"((?:\d{1,3}(?:\[\.\]|\.)?){3}\d{1,3})" 
-    domain_regex = r"\b(?:[a-zA-Z0-9-]+\[?\.\]?)+[a-zA-Z]{2,}\b"
-    hash_regex = r"\b([a-fA-F0-9]{32}|[a-fA-F0-9]{40}|[a-fA-F0-9]{64})\b"
-    url_regex=r""
+    with open('collected_tweets.txt','r', encoding='utf-8') as file:
+        tokens = re.split('\s+',file.read())
 
-    def extract_iocs(text):
-        ips = [ip.replace("[.]", ".") for ip in re.findall(ip_regex, text)]
-        domains = [domain.replace("[.]", ".") for domain in re.findall(domain_regex, text)]
-        hashes = re.findall(hash_regex, text)
-        return ips, domains, hashes
+    output_data = {"urls":set(),
+          "email_addresses":set(),
+          "domains":set(),
+          "ipv4s":set(),
+          "md5s":set(),
+          "sha1s":set(),
+          "sha256s":set(),
+          "sha512s":set()
+          }
+   
+    ioc_types=["urls","email_addresses","domains","ipv4s","md5s","sha1s","sha256s","sha512s"]
 
-    ips, domains, hashes = extract_iocs(collected_tweets)
-    clean_ip_regex = r"\b(?:\d{1,3}\.){3}\d{1,3}\b"
-    clean_ips = [ip for ip in ips if re.match(clean_ip_regex, ip)]
+    for token in tokens:
+        ioc_finder_result=find_iocs(token)
+        for ioc_type in ioc_types:
+            if ioc_finder_result[ioc_type]:
+                output_data[ioc_type].add(ioc_finder_result[ioc_type][0])
+                break
     
     from_date = cutoff_time.date()
     today_date = datetime.now().date()
@@ -168,11 +173,6 @@ def main_extractor(malware_name, cutoff_time):
     
     os.makedirs(malware_name, exist_ok=True)
 
-    output_data = {
-        "ips": list(set(clean_ips)),
-        "domains": list(set(domains)),
-        "hashes": list(set(hashes)),
-    }
     
     # Save as raw txt file
     output_file=os.path.join(malware_name,f"{malware_name}_{from_date}_to_{today_date}.txt")
@@ -180,7 +180,7 @@ def main_extractor(malware_name, cutoff_time):
         #json.dump(output_data, json_file, indent=4)
         for key,iocs_list in output_data.items():
             for item in iocs_list:
-                if key != 'domains':
+                if key in ["domains","email_addresses","email_addresses_complete","ipv4s","urls","md5s","sha1s","sha256s","sha512s"]:
                     raw_file.write(item+"\n")
     
     print("Extracted IOCs saved to raw txt file:", output_data)

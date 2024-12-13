@@ -18,6 +18,10 @@ pip install pickle
 pip install python-dateutil
 ```
 
+```
+pip install ioc-finder
+```
+
 ---
 ## Usage
 - Download the two scripts and store them into a new folder
