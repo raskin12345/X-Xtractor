@@ -1,7 +1,6 @@
 import re
 import os
 import pickle
-#import csv
 from helium import *
 from time import sleep
 from datetime import datetime, timedelta
@@ -10,10 +9,6 @@ from selenium.common.exceptions import NoSuchElementException, StaleElementRefer
 import urllib.request
 from ioc_finder import find_iocs
 
-"""
-TODO: use the iocextract library
-make the search query url encoded on its own
-"""
 
 # Refactored function to start browser session and handle cookies
 def start_browser_session(malware):
@@ -21,6 +16,7 @@ def start_browser_session(malware):
         browser = start_firefox(f"https://x.com/search?q={malware}&src=typed_query&f=live", headless=False)
         sleep(3)  # Allow time for the page to load
         
+        #Checking if Cookies file exists or not
         if os.path.exists("cookies.pkl"):
             load_cookies(browser)
             go_to(f"https://x.com/search?q={malware}&src=typed_query&f=live")  # Refresh after loading cookies
@@ -32,7 +28,7 @@ def start_browser_session(malware):
         print(f"Error starting browser session: {e}")
         return None
 
-# Login if cookies do not exist
+# Login if cookies do not exist. The user must enter login credentials in the terminal
 def login_to_twitter(browser):
     username = input("Enter Username: ")
     password = input("Enter Password: ")
@@ -140,10 +136,10 @@ def save_collected_tweets(tweets):
     except IOError as e:
         print(f"Failed to save tweets: {e}")
 
-# Extract and save IOCs from collected tweets
+# Extract and save IOCs from collected tweets, using ioc-finder module for it
 def main_extractor(malware_name, cutoff_time):
 
-    with open('collected_tweets.txt','r', encoding='utf-8') as file:
+    with open('collected_tweets.txt','r',encoding='utf-8') as file:
         tokens = re.split('\s+',file.read())
 
     output_data = {"urls":set(),
@@ -153,17 +149,29 @@ def main_extractor(malware_name, cutoff_time):
           "md5s":set(),
           "sha1s":set(),
           "sha256s":set(),
-          "sha512s":set()
+          "sha512s":set(),
+          "hashes":set()
           }
    
+    ip_regex= r"((?:\d{1,3}(?:\[\.\]|\.|\[\.|\.\]|\(\.|\.\)|\(\.\)|\\\.|\/\.|\.\\|\.\/|dot|\[dot\]|\(dot\))?){3}\d{1,3})"
     ioc_types=["urls","email_addresses","domains","ipv4s","md5s","sha1s","sha256s","sha512s"]
+    ip_defangers=["[.",".]","(.",".)","\\.",".\\","/.","./"]
 
     for token in tokens:
+        if re.search(ip_regex, token):
+            for ip_defanger in ip_defangers:
+                if ip_defanger in token:
+                    token = token.replace(ip_defanger,".")
         ioc_finder_result=find_iocs(token)
+        hashes=ioc_finder_result["md5s"] + ioc_finder_result["sha1s"] + ioc_finder_result["sha256s"] + ioc_finder_result["sha512s"]
         for ioc_type in ioc_types:
             if ioc_finder_result[ioc_type]:
-                output_data[ioc_type].add(ioc_finder_result[ioc_type][0])
-                break
+                if ioc_type == 'urls' and (ioc_finder_result["md5s"] or ioc_finder_result["sha1s"] or ioc_finder_result["sha256s"]or ioc_finder_result["sha512s"]):
+                    output_data["hashes"].add(hashes[0])
+                    break
+                else:
+                    output_data[ioc_type].add(ioc_finder_result[ioc_type][0])
+                    break
     
     from_date = cutoff_time.date()
     today_date = datetime.now().date()
@@ -180,10 +188,12 @@ def main_extractor(malware_name, cutoff_time):
         #json.dump(output_data, json_file, indent=4)
         for key,iocs_list in output_data.items():
             for item in iocs_list:
-                if key in ["domains","email_addresses","email_addresses_complete","ipv4s","urls","md5s","sha1s","sha256s","sha512s"]:
+                if key in ["domains","email_addresses","email_addresses_complete","ipv4s","urls","md5s","sha1s","sha256s","sha512s","hashes"]:
                     raw_file.write(item+"\n")
     
     print("Extracted IOCs saved to raw txt file:", output_data)
+
+
 
 # Main function to start the process
 def scrape_and_collect_tweets():
@@ -213,4 +223,7 @@ def scrape_and_collect_tweets():
 # Start the scraping and extraction process
 malware_name, cutoff_time = scrape_and_collect_tweets()
 if malware_name and cutoff_time:
+    print("="*60)
+    print("EXTRACTION STARTING: This may take 1 to 2 minutes .....")
+    print("="*60)
     main_extractor(malware_name, cutoff_time)
